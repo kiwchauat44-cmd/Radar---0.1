@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { tacticalAudio } from '../services/audioEffects';
 import {
+  AegisSystemState,
   OwnShip,
   RadarColorScheme,
   RadarRangeNM,
@@ -22,6 +23,8 @@ interface RadarPPIViewProps {
   onRangeChange: (newRange: RadarRangeNM) => void;
   panOffset: { x: number; y: number };
   onPanOffsetChange: (offset: { x: number; y: number }) => void;
+  aegisState?: AegisSystemState;
+  onToggleCrtFlicker?: () => void;
 }
 
 // ชุดสีคอนโซลเรดาร์ยุทธการเรือรบ
@@ -107,6 +110,8 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
   onRangeChange,
   panOffset,
   onPanOffsetChange,
+  aegisState,
+  onToggleCrtFlicker,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -242,6 +247,14 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
       };
     };
 
+    // Helper: Convert Cartesian Relative NM (East +x, North +y) to Canvas Coordinates
+    const cartesianNMToCanvas = (xNM: number, yNM: number) => {
+      const rNM = Math.hypot(xNM, yNM);
+      let bDeg = (Math.atan2(xNM, yNM) * 180) / Math.PI;
+      if (bDeg < 0) bDeg += 360;
+      return polarToCanvas(rNM, bDeg);
+    };
+
     // 2. Simulated Sea Clutter (ผิวน้ำสะท้อนใกล้เรือ)
     if (settings.seaClutter !== 'off' && settings.gain > 15) {
       const clutterMultipliers: Record<string, number> = { low: 25, med: 50, high: 80 };
@@ -298,6 +311,34 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
         ctx.fillText(`${ringDistanceNM} NM`, centerX + 4, centerY - ringRadius + 12);
+      });
+    }
+
+    // 4b. Aegis Combat System Weapon Envelopes (วงแหวนพิสัยอาวุธปล่อยนำวิถีเอจิส)
+    if (aegisState?.isActive) {
+      const envelopes = [
+        { name: 'CIWS 1.5 NM', nm: 1.5, color: 'rgba(56, 189, 248, 0.55)', dash: [3, 3] },
+        { name: 'ESSM 10 NM', nm: 10, color: 'rgba(251, 146, 60, 0.55)', dash: [6, 4] },
+        { name: 'SM-2 30 NM', nm: 30, color: 'rgba(244, 63, 94, 0.55)', dash: [8, 4] },
+      ];
+
+      envelopes.forEach((env) => {
+        if (env.nm <= settings.rangeNM) {
+          const envR = (env.nm / settings.rangeNM) * radius;
+          ctx.strokeStyle = env.color;
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash(env.dash);
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, envR, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = env.color;
+          ctx.font = '700 9px "JetBrains Mono", monospace';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(`[${env.name}]`, centerX - 8, centerY - envR + 11);
+        }
       });
     }
 
@@ -431,7 +472,66 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
       ctx.strokeStyle = contactColor;
       ctx.lineWidth = 1.5;
 
-      if (tgt.classification === 'escort' || tgt.threatLevel === 'friendly') {
+      if (tgt.status === 'destroyed') {
+        // Target Destroyed / Intercepted: Red X with debris rings
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-8, -8);
+        ctx.lineTo(8, 8);
+        ctx.moveTo(-8, 8);
+        ctx.lineTo(8, -8);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = '800 8px "JetBrains Mono", monospace';
+        ctx.fillText('SPLASH', 10, 8);
+      } else if (tgt.classification === 'missile') {
+        // Missile: Inbound supersonic arrow/dart pointing in course heading with shockwave wings
+        const mslAngle = (tgt.courseDeg + orientationAngleOffset - 90) * (Math.PI / 180);
+        ctx.save();
+        ctx.rotate(mslAngle);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        // Sharp supersonic arrowhead
+        ctx.moveTo(9, 0);
+        ctx.lineTo(-7, -5);
+        ctx.lineTo(-4, 0);
+        ctx.lineTo(-7, 5);
+        ctx.closePath();
+        ctx.stroke();
+
+        // Shockwave cone lines
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(9, 0);
+        ctx.lineTo(-10, -8);
+        ctx.moveTo(9, 0);
+        ctx.lineTo(-10, 8);
+        ctx.stroke();
+        ctx.restore();
+      } else if (tgt.classification === 'fighter_jet') {
+        // Fighter Jet: Swept-wing delta aircraft symbol pointing in course heading
+        const jetAngle = (tgt.courseDeg + orientationAngleOffset - 90) * (Math.PI / 180);
+        ctx.save();
+        ctx.rotate(jetAngle);
+        ctx.strokeStyle = tgt.threatLevel === 'friendly' ? theme.friendly : '#ef4444';
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        // Fighter jet outline (nose, delta wings, tail)
+        ctx.moveTo(10, 0);
+        ctx.lineTo(-2, -9);
+        ctx.lineTo(-3, -3);
+        ctx.lineTo(-8, -5);
+        ctx.lineTo(-8, 5);
+        ctx.lineTo(-3, 3);
+        ctx.lineTo(-2, 9);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      } else if (tgt.classification === 'escort' || tgt.threatLevel === 'friendly') {
         // Friendly: Circle / Escort
         ctx.beginPath();
         ctx.arc(0, 0, 7, 0, Math.PI * 2);
@@ -476,7 +576,14 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
       ctx.font = '600 10px "JetBrains Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(tgt.id, 10, -2);
+
+      let tagSuffix = '';
+      if (tgt.classification === 'missile') {
+        tagSuffix = ` [MSL ${tgt.speedKnots}kt]`;
+      } else if (tgt.classification === 'fighter_jet') {
+        tagSuffix = ` [JET M${tgt.machSpeed || 1.1}]`;
+      }
+      ctx.fillText(`${tgt.id}${tagSuffix}`, 10, -2);
 
       // Selected / Locked Target Reticle (กรอบล็อกเป้าหมาย)
       if (isSelected || tgt.status === 'locked') {
@@ -531,6 +638,102 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
     ctx.stroke();
     ctx.shadowBlur = 0;
     ctx.restore();
+
+    // ==========================================
+    // AEGIS COMBAT SYSTEM TACTICAL GRAPHICS
+    // (ขีปนาวุธที่กำลังบิน, ลำแสงนำวิถีเรดาร์เฟสอะเรย์, และคลื่นระเบิดสกัดกั้น)
+    // ==========================================
+    if (aegisState?.isActive) {
+      // 1. AN/SPY-1 Phased Array Illuminator Guidance Beams
+      targets.forEach((tgt) => {
+        if (tgt.status === 'locked' || (tgt.threatLevel === 'hostile' && tgt.rangeNM <= settings.rangeNM)) {
+          const tgtScreen = polarToCanvas(tgt.rangeNM, tgt.bearingDeg);
+          const dashOffset = -((now / 35) % 20);
+
+          ctx.save();
+          ctx.strokeStyle = tgt.status === 'locked' ? 'rgba(239, 68, 68, 0.45)' : 'rgba(251, 146, 60, 0.35)';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 6]);
+          ctx.lineDashOffset = dashOffset;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(tgtScreen.x, tgtScreen.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+      });
+
+      // 2. Active Interceptor Missiles in Flight (ขีปนาวุธ VLS กำลังบินสกัดกั้น)
+      aegisState.activeMissiles.forEach((msl) => {
+        const mslPos = cartesianNMToCanvas(msl.xNM, msl.yNM);
+
+        // Exhaust smoke plume trail
+        if (msl.trail.length > 1) {
+          ctx.save();
+          ctx.strokeStyle = msl.weaponType === 'CIWS' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(251, 146, 60, 0.65)';
+          ctx.lineWidth = msl.weaponType === 'CIWS' ? 1.5 : 2.5;
+          ctx.beginPath();
+          let first = true;
+          msl.trail.forEach((pt) => {
+            const ptPos = cartesianNMToCanvas(pt.x, pt.y);
+            if (first) {
+              ctx.moveTo(ptPos.x, ptPos.y);
+              first = false;
+            } else {
+              ctx.lineTo(ptPos.x, ptPos.y);
+            }
+          });
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Missile Head & Booster Fire
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = msl.weaponType === 'SM-2' ? '#f43f5e' : msl.weaponType === 'ESSM' ? '#fb923c' : '#38bdf8';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(mslPos.x, mslPos.y, msl.weaponType === 'CIWS' ? 2 : 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Weapon label
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '700 8px "JetBrains Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`🚀 ${msl.weaponType}`, mslPos.x + 6, mslPos.y - 2);
+        ctx.restore();
+      });
+
+      // 3. Detonations / Interception Explosions (คลื่นกระแทกทำลายเป้าหมาย)
+      aegisState.explosions.forEach((exp) => {
+        const expPos = cartesianNMToCanvas(exp.xNM, exp.yNM);
+        const progress = Math.min(1, (now - exp.startTime) / exp.durationMs);
+        const currentRadiusPx = (exp.radiusNM / settings.rangeNM) * radius * progress * 2.2;
+
+        ctx.save();
+        // Expanding shockwave ring
+        ctx.strokeStyle = exp.color;
+        ctx.lineWidth = Math.max(1, 3 * (1 - progress));
+        ctx.beginPath();
+        ctx.arc(expPos.x, expPos.y, Math.max(4, currentRadiusPx), 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner flash core
+        const flashAlpha = Math.max(0, 1 - progress * 1.5);
+        ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+        ctx.beginPath();
+        ctx.arc(expPos.x, expPos.y, Math.max(2, 6 * (1 - progress)), 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = exp.color;
+        ctx.font = '800 9px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('💥 SPLASH', expPos.x, expPos.y - currentRadiusPx - 4);
+        ctx.restore();
+      });
+    }
 
     ctx.restore(); // End clipping inside radar circle
 
@@ -764,15 +967,48 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
         onTouchEnd={handleTouchEnd}
       />
 
+      {/* Legacy CRT Radar Scanline Intermittent Flicker Overlay */}
+      {settings.crtFlickerEnabled !== false && (
+        <div className="absolute inset-0 pointer-events-none crt-scanline-flicker crt-curvature-vignette z-10" />
+      )}
+
+      {/* Aegis Combat Mode Floating Tactical HUD Banner */}
+      {aegisState?.isActive && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none z-20 flex items-center gap-2 text-[10px] font-mono-radar bg-rose-950/90 text-rose-200 border border-rose-600/90 px-3 py-1 rounded shadow-xl aegis-badge-pulse backdrop-blur-xs">
+          <div className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+          <span className="font-bold tracking-wider">
+            AEGIS COMBAT SYSTEM // {aegisState.doctrine.toUpperCase().replace('_', '-')}
+          </span>
+          {aegisState.activeMissiles.length > 0 && (
+            <span className="bg-rose-600 text-white font-bold px-1.5 py-0.2 rounded text-[9px] animate-pulse">
+              🚀 {aegisState.activeMissiles.length} VLS IN FLIGHT
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Floating HUD Indicators on Radar Edge (Zero Overlap with radar core) */}
-      <div className="absolute top-2 left-2 pointer-events-none flex flex-col gap-0.5 text-[10px] font-mono-radar text-emerald-400/80 bg-slate-950/60 px-1.5 py-1 rounded border border-emerald-900/40">
+      <div className="absolute top-2 left-2 pointer-events-none flex flex-col gap-0.5 text-[10px] font-mono-radar text-emerald-400/80 bg-slate-950/60 px-1.5 py-1 rounded border border-emerald-900/40 z-15">
         <div>RNG: <span className="text-white font-bold">{settings.rangeNM} NM</span></div>
         <div>RINGS: <span className="text-emerald-300">{(settings.rangeNM / 4).toFixed(settings.rangeNM <= 2 ? 2 : 1)} NM</span></div>
       </div>
 
-      <div className="absolute top-2 right-2 pointer-events-none flex flex-col items-end gap-0.5 text-[10px] font-mono-radar text-emerald-400/80 bg-slate-950/60 px-1.5 py-1 rounded border border-emerald-900/40">
+      <div className="absolute top-2 right-2 pointer-events-none flex flex-col items-end gap-0.5 text-[10px] font-mono-radar text-emerald-400/80 bg-slate-950/60 px-1.5 py-1 rounded border border-emerald-900/40 z-15">
         <div>ORI: <span className="text-white font-bold">{settings.orientation.replace('_', ' ').toUpperCase()}</span></div>
-        <div>PULSE: <span className="text-emerald-300">LP 0.8μs</span></div>
+        <div className="flex items-center gap-1">
+          <span>CRT:</span>
+          <button
+            onClick={() => onToggleCrtFlicker?.()}
+            className={`pointer-events-auto cursor-pointer font-bold px-1 rounded text-[9px] transition-colors ${
+              settings.crtFlickerEnabled !== false
+                ? 'text-emerald-300 bg-emerald-950/90 border border-emerald-600/80'
+                : 'text-slate-400 bg-slate-900 border border-slate-700'
+            }`}
+            title="แตะเพื่อเปิด/ปิดเอฟเฟกต์กะพริบจอเรดาร์ CRT โบราณ"
+          >
+            {settings.crtFlickerEnabled !== false ? 'FLICKER ON' : 'OFF'}
+          </button>
+        </div>
       </div>
 
       {panOffset.x !== 0 || panOffset.y !== 0 ? (
@@ -781,7 +1017,7 @@ export const RadarPPIView: React.FC<RadarPPIViewProps> = ({
             tacticalAudio.playButtonPress();
             onPanOffsetChange({ x: 0, y: 0 });
           }}
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] font-mono bg-emerald-950/90 text-emerald-300 border border-emerald-600/60 px-3 py-1 rounded shadow-lg active:scale-95 transition-transform"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] font-mono bg-emerald-950/90 text-emerald-300 border border-emerald-600/60 px-3 py-1 rounded shadow-lg active:scale-95 transition-transform z-15"
         >
           รีเซ็ตศูนย์กลาง (CENTER SHIP)
         </button>

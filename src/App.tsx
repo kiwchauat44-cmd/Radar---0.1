@@ -5,14 +5,19 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
+  AegisSystemState,
+  AegisWeaponType,
   GPSStatus,
   HardwareRadarStatus,
   OwnShip,
   RadarSettings,
   RadarTarget,
+  SonarState,
   ThreatLevel,
 } from './types/radar';
 import { simulationEngine } from './services/targetSimulationEngine';
+import { aegisEngine } from './services/aegisCombatEngine';
+import { sonarManager } from './services/sonarManager';
 import { gpsManager } from './services/gpsManager';
 import { hardwareRadarManager } from './services/hardwareRadarInterface';
 import { tacticalAudio } from './services/audioEffects';
@@ -22,6 +27,7 @@ import { TargetInfoPanel } from './components/TargetInfoPanel';
 import { MobileControlPanel } from './components/MobileControlPanel';
 import { HardwareRadarModal } from './components/HardwareRadarModal';
 import { AddTargetModal } from './components/AddTargetModal';
+import { SonarWaterfallPanel } from './components/SonarWaterfallPanel';
 
 export default function App() {
   // 1. Radar Settings
@@ -46,6 +52,7 @@ export default function App() {
     eblAngleDeg: 45,
     vrmActive: false,
     vrmDistanceNM: 5,
+    crtFlickerEnabled: true,
   });
 
   // 2. Own Ship State (เรือเรา - เรือฟริเกตตรวจการณ์อ่าวไทย)
@@ -68,10 +75,28 @@ export default function App() {
   const [hardwareStatus, setHardwareStatus] = useState<HardwareRadarStatus>(hardwareRadarManager.getStatus());
   const [radarSystemStatus] = useState(hardwareRadarManager.getSystemStatus());
 
-  // 5. Interactive Pan Offset (for panning PPI view)
+  // 5. Aegis Combat System State
+  const [aegisState, setAegisState] = useState<AegisSystemState>(aegisEngine.getState());
+
+  useEffect(() => {
+    return aegisEngine.subscribe((state) => {
+      setAegisState(state);
+    });
+  }, []);
+
+  // 6. ASW Waterfall Sonar State
+  const [sonarState, setSonarState] = useState<SonarState>(sonarManager.getState());
+
+  useEffect(() => {
+    return sonarManager.subscribe((state) => {
+      setSonarState(state);
+    });
+  }, []);
+
+  // 7. Interactive Pan Offset (for panning PPI view)
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // 6. Modals
+  // 8. Modals
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState(false);
   const [isAddTargetModalOpen, setIsAddTargetModalOpen] = useState(false);
 
@@ -131,6 +156,12 @@ export default function App() {
       const updated = simulationEngine.updatePhysics(ownShip, settings);
       setTargets(updated);
 
+      // Update Aegis interceptor flyout physics & auto-defense
+      aegisEngine.updateMissilesPhysics(0.12, updated);
+
+      // Update ASW Waterfall Sonar physics & acoustic spectrogram
+      sonarManager.updatePhysics(0.12);
+
       // Check for urgent collision risks and trigger alert chime
       const hasCriticalThreat = updated.some(
         (t) => t.threatLevel !== 'friendly' && t.cpaNM < 0.8 && t.tcpaMin > 0 && t.tcpaMin < 10
@@ -171,6 +202,19 @@ export default function App() {
   const handleChangeThreat = useCallback((id: string, threat: ThreatLevel) => {
     simulationEngine.updateTargetThreat(id, threat);
     setTargets((prev) => prev.map((t) => (t.id === id ? { ...t, threatLevel: threat } : t)));
+  }, []);
+
+  const handleToggleAegis = useCallback(() => {
+    aegisEngine.toggleAegis();
+  }, []);
+
+  const handleLaunchWeapon = useCallback((weapon: AegisWeaponType, target: RadarTarget) => {
+    aegisEngine.launchWeapon(weapon, target);
+  }, []);
+
+  const handleToggleCrtFlicker = useCallback(() => {
+    tacticalAudio.playButtonPress();
+    setSettings((s) => ({ ...s, crtFlickerEnabled: s.crtFlickerEnabled === false ? true : false }));
   }, []);
 
   const handleResetRadar = useCallback(() => {
@@ -237,6 +281,14 @@ export default function App() {
           tacticalAudio.playButtonPress();
           setIsHardwareModalOpen(true);
         }}
+        aegisState={aegisState}
+        onToggleAegis={handleToggleAegis}
+        onToggleSonar={() => {
+          tacticalAudio.playButtonPress();
+          sonarManager.togglePanel();
+        }}
+        isSonarOpen={sonarState.isPanelOpen}
+        torpedoAlert={sonarState.torpedoAlert}
       />
 
       {/* 2. CENTER RADAR PPI DISPLAY (พื้นที่หลักของหน้าจอ - The Core Star of the App) */}
@@ -250,6 +302,8 @@ export default function App() {
           onRangeChange={(newRange) => setSettings((s) => ({ ...s, rangeNM: newRange }))}
           panOffset={panOffset}
           onPanOffsetChange={setPanOffset}
+          aegisState={aegisState}
+          onToggleCrtFlicker={handleToggleCrtFlicker}
         />
       </main>
 
@@ -265,6 +319,8 @@ export default function App() {
             onLock={handleLockTarget}
             onToggleTrail={handleToggleTargetTrail}
             onChangeThreat={handleChangeThreat}
+            aegisState={aegisState}
+            onLaunchWeapon={handleLaunchWeapon}
           />
         )}
 
@@ -278,6 +334,12 @@ export default function App() {
           onCenterShip={() => setPanOffset({ x: 0, y: 0 })}
           onResetRadar={handleResetRadar}
           onSpawnTarget={() => setIsAddTargetModalOpen(true)}
+          aegisState={aegisState}
+          sonarState={sonarState}
+          onToggleSonar={() => {
+            tacticalAudio.playButtonPress();
+            sonarManager.togglePanel();
+          }}
         />
       </footer>
 
@@ -294,6 +356,18 @@ export default function App() {
         onClose={() => setIsAddTargetModalOpen(false)}
         onAddTarget={handleAddCustomTarget}
       />
+
+      {/* 5. ASW WATERFALL SONAR SUB-PANEL MODAL */}
+      {sonarState.isPanelOpen && (
+        <div className="fixed inset-0 z-40 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-fadeIn">
+          <div className="w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+            <SonarWaterfallPanel
+              sonarState={sonarState}
+              onClose={() => sonarManager.togglePanel(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

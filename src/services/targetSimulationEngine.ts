@@ -8,6 +8,7 @@ import {
   RadarSettings,
   RadarTarget,
   TargetClassification,
+  TargetStatus,
   ThreatLevel,
   TrailPoint,
 } from '../types/radar';
@@ -25,7 +26,11 @@ export interface InternalTargetState {
   isRealHardwareTarget: boolean;
   trailHistory: TrailPoint[];
   showTrail: boolean;
-  status: 'detected' | 'tracking' | 'locked';
+  status: TargetStatus;
+  destroyedAt?: number;
+  altitudeFt?: number;
+  machSpeed?: number;
+  rcsM2?: number;
 }
 
 export class TargetSimulationEngine {
@@ -148,33 +153,39 @@ export class TargetSimulationEngine {
       },
       {
         id: 'TGT-08',
-        name: 'Tanker Ocean Splendor (เรือบรรทุกน้ำมัน)',
-        classification: 'merchant',
-        threatLevel: 'neutral',
-        xNM: -8.0,
-        yNM: -5.4,
-        courseDeg: 45,
-        speedKnots: 12.0,
-        echoStrength: 0.99,
+        name: 'Su-30MK Flanker Strike Jet (บ.ขับไล่โจมตีข้าศึก)',
+        classification: 'fighter_jet',
+        threatLevel: 'hostile',
+        xNM: 8.5,
+        yNM: 14.2,
+        courseDeg: 215,
+        speedKnots: 680.0,
+        echoStrength: 0.95,
         isRealHardwareTarget: false,
         trailHistory: [],
         showTrail: true,
-        status: 'detected',
+        status: 'locked',
+        altitudeFt: 24000,
+        machSpeed: 1.1,
+        rcsM2: 5.0,
       },
       {
         id: 'TGT-09',
-        name: 'Fast Interceptor 09 (เรือเร็วลอบผ่าน)',
-        classification: 'high_speed',
+        name: 'C-802 Anti-Ship Cruise Missile (ขีปนาวุธร่อนผิวน้ำ)',
+        classification: 'missile',
         threatLevel: 'hostile',
-        xNM: 5.8,
-        yNM: -7.0,
-        courseDeg: 345,
-        speedKnots: 42.0,
-        echoStrength: 0.70,
+        xNM: -5.8,
+        yNM: 9.2,
+        courseDeg: 145,
+        speedKnots: 560.0,
+        echoStrength: 0.55,
         isRealHardwareTarget: false,
         trailHistory: [],
         showTrail: true,
-        status: 'tracking',
+        status: 'locked',
+        altitudeFt: 35,
+        machSpeed: 0.85,
+        rcsM2: 0.1,
       },
       {
         id: 'TGT-10',
@@ -193,18 +204,39 @@ export class TargetSimulationEngine {
       },
       {
         id: 'TGT-11',
-        name: 'Maritime Patrol Do-228 (บ.ลาดตระเวน)',
-        classification: 'aircraft',
-        threatLevel: 'neutral',
-        xNM: -9.4,
-        yNM: -2.0,
-        courseDeg: 80,
-        speedKnots: 160.0,
+        name: 'JAS-39 Gripen RTN-701 (บ.ขับไล่คุ้มกัน ทร.)',
+        classification: 'fighter_jet',
+        threatLevel: 'friendly',
+        xNM: -7.5,
+        yNM: -4.0,
+        courseDeg: 35,
+        speedKnots: 540.0,
         echoStrength: 0.80,
         isRealHardwareTarget: false,
         trailHistory: [],
         showTrail: true,
-        status: 'detected',
+        status: 'tracking',
+        altitudeFt: 18000,
+        machSpeed: 0.9,
+        rcsM2: 2.0,
+      },
+      {
+        id: 'TGT-12',
+        name: 'YJ-12 Supersonic ASCM (ขีปนาวุธความเร็วเหนือเสียง)',
+        classification: 'missile',
+        threatLevel: 'hostile',
+        xNM: 14.2,
+        yNM: -6.5,
+        courseDeg: 295,
+        speedKnots: 1150.0,
+        echoStrength: 0.65,
+        isRealHardwareTarget: false,
+        trailHistory: [],
+        showTrail: true,
+        status: 'locked',
+        altitudeFt: 45,
+        machSpeed: 1.8,
+        rcsM2: 0.25,
       },
     ];
 
@@ -236,7 +268,22 @@ export class TargetSimulationEngine {
 
     const calculatedTargets: RadarTarget[] = [];
 
+    // Exclude destroyed targets immediately so they vanish from the radar like in real life!
+    this.targets = this.targets.filter((t) => t.status !== 'destroyed');
+
     for (const t of this.targets) {
+      // 1. Dynamic movement & guidance for Missiles and Fighter Jets
+      if (t.classification === 'missile') {
+        // Anti-ship cruise missile homing guidance vector towards own ship (0,0)
+        let homeBearing = (Math.atan2(-t.xNM, -t.yNM) * 180) / Math.PI;
+        if (homeBearing < 0) homeBearing += 360;
+        t.courseDeg = homeBearing;
+      } else if (t.classification === 'fighter_jet') {
+        // High-speed fighter jet tactical combat maneuvering turn
+        const turnNoise = Math.sin(now * 0.0008 + (t.id.charCodeAt(t.id.length - 1) || 1)) * 0.35;
+        t.courseDeg = (t.courseDeg + turnNoise + 360) % 360;
+      }
+
       // เวกเตอร์ความเร็วเป้าหมาย (Target velocity in knots)
       const tgtCourseRad = (t.courseDeg * Math.PI) / 180;
       const vtx = t.speedKnots * Math.sin(tgtCourseRad);
@@ -333,6 +380,9 @@ export class TargetSimulationEngine {
           latitude: Number(targetLat.toFixed(4)),
           longitude: Number(targetLon.toFixed(4)),
           lastUpdated: now,
+          altitudeFt: t.altitudeFt,
+          machSpeed: t.machSpeed,
+          rcsM2: t.rcsM2,
         });
       }
     }
@@ -340,11 +390,112 @@ export class TargetSimulationEngine {
     return calculatedTargets;
   }
 
-  public setTargetStatus(targetId: string, status: 'detected' | 'tracking' | 'locked') {
+  public setTargetStatus(targetId: string, status: TargetStatus) {
     const tgt = this.targets.find((t) => t.id === targetId);
     if (tgt) {
       tgt.status = status;
     }
+  }
+
+  public destroyTarget(targetId: string): { success: boolean; target?: InternalTargetState } {
+    const idx = this.targets.findIndex((t) => t.id === targetId);
+    if (idx >= 0) {
+      const tgt = { ...this.targets[idx], status: 'destroyed' as TargetStatus };
+      // Immediately eliminate from active targets so it instantly disappears from the radar scope like real life!
+      this.targets.splice(idx, 1);
+      return { success: true, target: tgt };
+    }
+    return { success: false };
+  }
+
+  public getTarget(targetId: string): InternalTargetState | undefined {
+    return this.targets.find((t) => t.id === targetId);
+  }
+
+  /**
+   * จำลองฝูงเป้าหมายคุกคามสำหรับการทดสอบระบบเอจิส (Aegis Combat Drill)
+   * ปล่อยขีปนาวุธต่อต้านเรือผิวน้ำความเร็วสูง และเรือเร็วติดจรวดพุ่งเข้าหาเรือเรา
+   */
+  public spawnAegisThreatWave() {
+    const now = Date.now();
+    const threatWaveConfigs = [
+      {
+        name: 'ASCM-802 Inbound Cruise Missile (ขีปนาวุธเรี่ยน้ำ)',
+        classification: 'missile' as TargetClassification,
+        threatLevel: 'hostile' as ThreatLevel,
+        rangeNM: 14.5,
+        bearingDeg: 315,
+        speedKnots: 560,
+        courseDeg: 135,
+        altitudeFt: 35,
+        machSpeed: 0.85,
+        rcsM2: 0.1,
+      },
+      {
+        name: 'Supersonic ASCM YJ-12 (ขีปนาวุธความเร็วเหนือเสียง)',
+        classification: 'missile' as TargetClassification,
+        threatLevel: 'hostile' as ThreatLevel,
+        rangeNM: 19.0,
+        bearingDeg: 28,
+        speedKnots: 1150,
+        courseDeg: 208,
+        altitudeFt: 45,
+        machSpeed: 1.8,
+        rcsM2: 0.2,
+      },
+      {
+        name: 'Boghammar Missile Fast Craft 21 (เรือเร็วโจมตี)',
+        classification: 'high_speed' as TargetClassification,
+        threatLevel: 'hostile' as ThreatLevel,
+        rangeNM: 8.2,
+        bearingDeg: 195,
+        speedKnots: 46.0,
+        courseDeg: 15,
+      },
+      {
+        name: 'Su-30 Strike Fighter Inbound (บ.โจมตีทางอากาศ)',
+        classification: 'fighter_jet' as TargetClassification,
+        threatLevel: 'hostile' as ThreatLevel,
+        rangeNM: 22.5,
+        bearingDeg: 78,
+        speedKnots: 680.0,
+        courseDeg: 258,
+        altitudeFt: 22000,
+        machSpeed: 1.15,
+        rcsM2: 4.5,
+      },
+    ];
+
+    threatWaveConfigs.forEach((cfg, idx) => {
+      const rad = (cfg.bearingDeg * Math.PI) / 180;
+      const xNM = cfg.rangeNM * Math.sin(rad);
+      const yNM = cfg.rangeNM * Math.cos(rad);
+      const id = `WAVE-${idx + 1}`;
+
+      // Remove previous target with same id if any
+      this.targets = this.targets.filter((t) => t.id !== id);
+
+      this.targets.push({
+        id,
+        name: cfg.name,
+        classification: cfg.classification,
+        threatLevel: cfg.threatLevel,
+        xNM,
+        yNM,
+        courseDeg: cfg.courseDeg,
+        speedKnots: cfg.speedKnots,
+        echoStrength: 0.85,
+        isRealHardwareTarget: false,
+        trailHistory: [
+          { x: xNM, y: yNM, timestamp: now },
+        ],
+        showTrail: true,
+        status: 'locked',
+        altitudeFt: cfg.altitudeFt,
+        machSpeed: cfg.machSpeed,
+        rcsM2: cfg.rcsM2,
+      });
+    });
   }
 
   public toggleTargetTrail(targetId: string, show: boolean) {

@@ -54,3 +54,106 @@
   );
   background-size: 100% 4px;
 }
+
+/* Legacy CRT Radar Scanline Intermittent Flicker Animation */
+@keyframes crt-intermittent-flicker {
+  0% {
+    opacity: 0.96;
+    filter: brightness(1) contrast(1.05);
+  }
+  3% {
+    opacity: 0.88;
+    filter: brightness(0.92) contrast(1.1);
+  }
+  6% {
+    opacity: 0.98;
+    filter: brightness(1.04) contrast(1.03);
+  }
+  14% {
+    opacity: 0.94;
+    filter: brightness(0.97) contrast(1.05);
+  }
+  15.5% {
+    opacity: 0.78;
+    filter: brightness(0.85) contrast(1.18);
+  }
+  17% {
+    opacity: 0.97;
+    filter: brightness(1.02) contrast(1.03);
+  }
+  48% {
+    opacity: 0.95;
+    filter: brightness(1) contrast(1.05);
+  }
+  49.5% {
+    opacity: 0.84;
+    filter: brightness(0.9) contrast(1.12);
+  }
+  51% {
+    opacity: 0.99;
+    filter: brightness(1.04) contrast(1.02);
+  }
+  78% {
+    opacity: 0.95;
+    filter: brightness(0.99) contrast(1.05);
+  }
+  79.2% {
+    opacity: 0.74;
+    filter: brightness(0.82) contrast(1.22);
+  }
+  81% {
+    opacity: 0.96;
+    filter: brightness(1.02) contrast(1.04);
+  }
+  100% {
+    opacity: 0.96;
+    filter: brightness(1) contrast(1.05);
+  }
+}
+
+@keyframes crt-scanline-drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 100%;
+  }
+}
+
+.crt-scanline-flicker {
+  animation: crt-intermittent-flicker 0.28s infinite steps(1, start);
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.36) 50%,
+    rgba(0, 0, 0, 0.36)
+  );
+  background-size: 100% 3px;
+  pointer-events: none;
+}
+
+/* CRT Vignette glass curvature */
+.crt-curvature-vignette {
+  background: radial-gradient(circle at center, transparent 65%, rgba(1, 6, 12, 0.75) 100%);
+  pointer-events: none;
+}
+
+/* Aegis Combat Mode Tactical Accents */
+.radar-glow-red {
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.35), inset 0 0 16px rgba(239, 68, 68, 0.2);
+}
+
+@keyframes aegis-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.95), 0 0 35px rgba(239, 68, 68, 0.4);
+  }
+}
+
+.aegis-badge-pulse {
+  animation: aegis-pulse 1.4s infinite ease-in-out;
+}
+

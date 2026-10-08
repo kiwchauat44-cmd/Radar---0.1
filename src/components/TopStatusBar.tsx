@@ -5,6 +5,7 @@
 
 import React from 'react';
 import {
+  AegisSystemState,
   GPSStatus,
   HardwareRadarStatus,
   OwnShip,
@@ -18,6 +19,8 @@ import {
   Compass,
   AlertTriangle,
   CheckCircle2,
+  ShieldAlert,
+  Waves,
 } from 'lucide-react';
 import { tacticalAudio } from '../services/audioEffects';
 
@@ -30,6 +33,11 @@ interface TopStatusBarProps {
   onToggleSound: () => void;
   onRequestGPS: () => void;
   onOpenHardwareModal: () => void;
+  aegisState?: AegisSystemState;
+  onToggleAegis?: () => void;
+  onToggleSonar?: () => void;
+  isSonarOpen?: boolean;
+  torpedoAlert?: boolean;
 }
 
 export const TopStatusBar: React.FC<TopStatusBarProps> = ({
@@ -41,6 +49,11 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({
   onToggleSound,
   onRequestGPS,
   onOpenHardwareModal,
+  aegisState,
+  onToggleAegis,
+  onToggleSonar,
+  isSonarOpen,
+  torpedoAlert,
 }) => {
   const isRealRadar = hardwareStatus.connectionState === 'connected';
 
@@ -57,18 +70,50 @@ export const TopStatusBar: React.FC<TopStatusBarProps> = ({
         </div>
 
         {/* Central Reality Badge: REAL RADAR vs SIMULATION (ชัดเจนตามข้อกำหนด) */}
-        <button
-          onClick={onOpenHardwareModal}
-          title="แตะเพื่อดูรายละเอียดหรือเชื่อมต่อฮาร์ดแวร์เรดาร์"
-          className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase transition-colors cursor-pointer flex items-center gap-1 ${
-            isRealRadar
-              ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/80 shadow-sm shadow-cyan-500/20'
-              : 'bg-amber-950/90 text-amber-300 border border-amber-600/60'
-          }`}
-        >
-          <Radio className="w-3 h-3 shrink-0" />
-          <span>{isRealRadar ? 'เรดาร์จริง REAL' : 'โหมดจำลอง SIM'}</span>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onOpenHardwareModal}
+            title="แตะเพื่อดูรายละเอียดหรือเชื่อมต่อฮาร์ดแวร์เรดาร์"
+            className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase transition-colors cursor-pointer flex items-center gap-1 ${
+              isRealRadar
+                ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/80 shadow-sm shadow-cyan-500/20'
+                : 'bg-amber-950/90 text-amber-300 border border-amber-600/60'
+            }`}
+          >
+            <Radio className="w-3 h-3 shrink-0" />
+            <span>{isRealRadar ? 'เรดาร์จริง' : 'จำลอง'}</span>
+          </button>
+
+          {/* Aegis Combat Mode Badge Button */}
+          <button
+            onClick={onToggleAegis}
+            title="แตะเพื่อเปิด/ปิดโหมดโจมตีระบบเอจิส (AEGIS COMBAT SYSTEM)"
+            className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase transition-all cursor-pointer flex items-center gap-1 ${
+              aegisState?.isActive
+                ? 'bg-rose-950 text-rose-200 border border-rose-500 shadow-sm shadow-rose-900/40 aegis-badge-pulse'
+                : 'bg-slate-900 text-slate-400 border border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            <ShieldAlert className={`w-3 h-3 shrink-0 ${aegisState?.isActive ? 'text-rose-400' : 'text-slate-500'}`} />
+            <span>{aegisState?.isActive ? 'เอจิส ON' : 'เอจิส'}</span>
+          </button>
+
+          {/* ASW Waterfall Sonar Sub-Panel Button */}
+          <button
+            onClick={onToggleSonar}
+            title="แตะเพื่อเปิด/ปิดจอโซนาร์แบบน้ำตกตรวจจับภัยคุกคามใต้น้ำ (ASW Waterfall Sonar)"
+            className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase transition-all cursor-pointer flex items-center gap-1 ${
+              torpedoAlert
+                ? 'bg-rose-950 text-rose-200 border border-rose-500 animate-pulse shadow-sm shadow-rose-900/40'
+                : isSonarOpen
+                ? 'bg-cyan-950 text-cyan-200 border border-cyan-500 shadow-sm shadow-cyan-900/40'
+                : 'bg-slate-900 text-slate-400 border border-slate-700 hover:text-slate-200'
+            }`}
+          >
+            <Waves className={`w-3 h-3 shrink-0 ${isSonarOpen ? 'text-cyan-400' : 'text-slate-500'}`} />
+            <span>{torpedoAlert ? 'ตอร์ปิโด!' : isSonarOpen ? 'โซนาร์ ON' : 'โซนาร์'}</span>
+          </button>
+        </div>
 
         {/* Right Action Icons: Threats indicator & Audio Toggle */}
         <div className="flex items-center gap-1 shrink-0">

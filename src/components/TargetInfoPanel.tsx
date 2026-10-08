@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { RadarTarget, ThreatLevel } from '../types/radar';
+import { AegisSystemState, AegisWeaponType, RadarTarget, ThreatLevel } from '../types/radar';
 import {
   Crosshair,
   Shield,
@@ -16,6 +16,8 @@ import {
   Lock,
   Unlock,
   Radio,
+  Flame,
+  Swords,
 } from 'lucide-react';
 import { tacticalAudio } from '../services/audioEffects';
 
@@ -27,6 +29,8 @@ interface TargetInfoPanelProps {
   onLock: (targetId: string) => void;
   onToggleTrail: (targetId: string, show: boolean) => void;
   onChangeThreat: (targetId: string, threat: ThreatLevel) => void;
+  aegisState?: AegisSystemState;
+  onLaunchWeapon?: (weapon: AegisWeaponType, target: RadarTarget) => void;
 }
 
 export const TargetInfoPanel: React.FC<TargetInfoPanelProps> = ({
@@ -37,6 +41,8 @@ export const TargetInfoPanel: React.FC<TargetInfoPanelProps> = ({
   onLock,
   onToggleTrail,
   onChangeThreat,
+  aegisState,
+  onLaunchWeapon,
 }) => {
   const isCpaWarning = target.cpaNM < 1.0 && target.tcpaMin > 0 && target.tcpaMin < 20;
 
@@ -55,10 +61,13 @@ export const TargetInfoPanel: React.FC<TargetInfoPanelProps> = ({
 
   const getClassificationThai = (c: string) => {
     switch (c) {
+      case 'missile': return 'ขีปนาวุธต่อต้านเรือ (Anti-Ship Missile)';
+      case 'fighter_jet': return 'เครื่องบินรบ (Fighter Jet)';
+      case 'aircraft': return 'อากาศยาน (Aircraft)';
+      case 'submarine': return 'เรือดำน้ำ (Submarine)';
       case 'escort': return 'เรือรบคุ้มกัน (Escort)';
       case 'merchant': return 'เรือสินค้า (Merchant)';
       case 'high_speed': return 'เรือเร็วตรวจการณ์ (Fast Craft)';
-      case 'aircraft': return 'อากาศยาน (Aircraft)';
       case 'surface': return 'เรือผิวน้ำ (Surface)';
       default: return 'ไม่ทราบประเภท (Unknown)';
     }
@@ -138,7 +147,11 @@ export const TargetInfoPanel: React.FC<TargetInfoPanelProps> = ({
       {/* Target Classification & Subtitle */}
       <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5">
         <span>ประเภท: <strong className="text-slate-200 font-medium">{getClassificationThai(target.classification)}</strong></span>
-        <span>สถานะ: <strong className="text-emerald-400 uppercase font-mono-radar">{target.status}</strong></span>
+        {target.altitudeFt !== undefined ? (
+          <span>ความสูง: <strong className="text-cyan-300 font-mono">{target.altitudeFt.toLocaleString()} ft</strong> {target.machSpeed ? <span className="text-amber-300 font-bold">(M{target.machSpeed})</span> : ''}</span>
+        ) : (
+          <span>สถานะ: <strong className="text-emerald-400 uppercase font-mono-radar">{target.status}</strong></span>
+        )}
       </div>
 
       {/* Tactical Action Buttons (Minimum 44-48px touch friendly) */}
@@ -224,6 +237,57 @@ export const TargetInfoPanel: React.FC<TargetInfoPanelProps> = ({
           <span>ปรับภัยคุกคาม</span>
         </button>
       </div>
+
+      {/* Aegis Quick Engagement Controls */}
+      {target.status !== 'destroyed' && (
+        <div className="bg-slate-950/90 p-1.5 rounded border border-rose-950/80 flex flex-col gap-1">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="font-bold text-rose-300 flex items-center gap-1 font-mono-radar">
+              <Swords className="w-3 h-3 text-rose-500" />
+              <span>สั่งยิงระบบเอจิส (AEGIS WEAPONS ENGAGE)</span>
+            </span>
+            {aegisState?.activeMissiles.some((m) => m.targetId === target.id) && (
+              <span className="text-cyan-300 font-mono text-[9px] animate-pulse">
+                🚀 กำลังบินสกัดกั้น
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            <button
+              onClick={() => onLaunchWeapon?.('SM-2', target)}
+              disabled={!aegisState || aegisState.vlsSm2Count <= 0}
+              className="py-1.5 px-1 rounded bg-rose-950 text-rose-200 border border-rose-700/80 hover:bg-rose-900 disabled:opacity-40 text-center font-bold text-[10px] active:scale-95 transition-transform cursor-pointer"
+              title="ยิง SM-2 (Standard Missile พิสัยไกล 40 NM)"
+            >
+              SM-2 ({aegisState?.vlsSm2Count ?? 0})
+            </button>
+            <button
+              onClick={() => onLaunchWeapon?.('ESSM', target)}
+              disabled={!aegisState || aegisState.vlsEssmCount <= 0}
+              className="py-1.5 px-1 rounded bg-amber-950 text-amber-200 border border-amber-700/80 hover:bg-amber-900 disabled:opacity-40 text-center font-bold text-[10px] active:scale-95 transition-transform cursor-pointer"
+              title="ยิง ESSM (Sea Sparrow พิสัยกลาง 15 NM)"
+            >
+              ESSM ({aegisState?.vlsEssmCount ?? 0})
+            </button>
+            <button
+              onClick={() => onLaunchWeapon?.('HARPOON', target)}
+              disabled={!aegisState || aegisState.harpoonCount <= 0}
+              className="py-1.5 px-1 rounded bg-cyan-950 text-cyan-200 border border-cyan-700/80 hover:bg-cyan-900 disabled:opacity-40 text-center font-bold text-[10px] active:scale-95 transition-transform cursor-pointer"
+              title="ยิง Harpoon (ต่อต้านเรือผิวน้ำ 35 NM)"
+            >
+              HARP ({aegisState?.harpoonCount ?? 0})
+            </button>
+            <button
+              onClick={() => onLaunchWeapon?.('CIWS', target)}
+              disabled={!aegisState || aegisState.ciwsRounds < 75}
+              className="py-1.5 px-1 rounded bg-emerald-950 text-emerald-200 border border-emerald-700/80 hover:bg-emerald-900 disabled:opacity-40 text-center font-bold text-[10px] active:scale-95 transition-transform cursor-pointer"
+              title="ยิง CIWS Phalanx 20mm (ระยะประชิด 1.5 NM)"
+            >
+              CIWS
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

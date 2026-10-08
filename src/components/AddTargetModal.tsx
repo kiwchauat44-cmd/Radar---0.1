@@ -91,9 +91,12 @@ export const AddTargetModal: React.FC<AddTargetModalProps> = ({
                 className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-2 text-white"
               >
                 <option value="surface">เรือผิวน้ำ (Surface)</option>
+                <option value="fighter_jet">✈️ เครื่องบินรบ (Fighter Jet)</option>
+                <option value="missile">🚀 ขีปนาวุธต่อต้านเรือ (Anti-Ship Missile)</option>
+                <option value="aircraft">อากาศยานทั่วไป (Aircraft)</option>
                 <option value="high_speed">เรือเร็ว (Fast Craft)</option>
+                <option value="submarine">เรือดำน้ำ (Submarine)</option>
                 <option value="merchant">เรือสินค้า (Merchant)</option>
-                <option value="aircraft">อากาศยาน (Aircraft)</option>
                 <option value="escort">เรือคุ้มกัน (Escort)</option>
                 <option value="unknown">ไม่ทราบประเภท (Unknown)</option>
               </select>
