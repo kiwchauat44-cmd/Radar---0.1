@@ -1,0 +1,10 @@
+{
+  "name": "Remix Naval Warship Radar Simulator (ระบบเรดาร์เรือรบจำลอง)",
+  "description": "ระบบจำลองเรดาร์ทางทะเลแบบเรือรบ PPI 360 องศา ออกแบบสำหรับมือถือ Android ติดตามเป้าหมายแบบเรียลไทม์ คำนวณ CPA/TCPA และสถาปัตยกรรมรองรับ Hardware Radar",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
